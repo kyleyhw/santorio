@@ -3,7 +3,8 @@
 Oct 15, 2026 · @mind goblin
 
 > **Status:** original skeleton spec, kept as written. Where it conflicts with
-> [`PLAN.md`](PLAN.md) (notably the web-first platform decision), `PLAN.md` wins.
+> [`docs/design.md`](docs/design.md) (notably the web-first platform decision),
+> the design document wins. Tasks are tracked in [`PROJECT_PLAN.md`](PROJECT_PLAN.md).
 
 A free, open-source iPhone fitness and calorie tracker for any goal: losing fat, maintaining, or building muscle. It merges the best features of paid trackers, estimates portions with a reference card (or LiDAR on iPhone Pro models), syncs with Apple Health, and keeps every user's personal data on their own device. Name: Santorio (repo: santorio), after Santorio Santorio, the 1600s physician who weighed himself and everything he ate for decades.
 
