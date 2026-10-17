@@ -84,9 +84,12 @@ over mask pixels (unit pixel area).
   height $h$ above the plane, seen from camera distance $Z$, is magnified by
   $Z/(Z-h)$, so an outline traced at the top of a mound overstates the
   footprint area by a factor of approximately $(1 - h/Z)^{-2} \approx 1 + 2h/Z$
-  for $h \ll Z$. This is applied as a bias correction with its own
-  uncertainty, since $Z$ is only approximately known in a browser (no camera
-  intrinsics are exposed).
+  for $h \ll Z$. Here $Z$ is the camera's height above the table, which
+  §1.5 recovers from the card itself, and §1.5 also gives the exact,
+  position-dependent form of this correction. Only when the pose cannot be
+  recovered (a view taken straight down, with no focal-length prior) is a
+  typical shooting height assumed, with a wide uncertainty **(to be fixed at
+  build)**.
 - **Outline error.** The AI outline's boundary error contributes
   $\sigma_{\ln A,\mathrm{outline}}$, larger for boxes than polygons, and larger
   for polygons than masks **(to be fixed at build** from the accuracy
@@ -94,6 +97,252 @@ over mask pixels (unit pixel area).
 
 The card error is **shared** by every item in the same photo; the outline
 error is item-specific. This distinction matters when items are summed (§3.3).
+
+### 1.4 Focal length from the card
+
+Section 1.1 defines $H$ as the map from image to plane. Its inverse
+$G = H^{-1} = [\,\mathbf g_1\ \mathbf g_2\ \mathbf g_3\,]$ maps plane to
+image. For a pinhole camera with intrinsic matrix $K$ and pose $(R, \mathbf t)$
+from the table frame to the camera frame, a plane point $(x, y, 0)$ images at
+
+$$
+\mathbf p \sim K\,[\,\mathbf r_1\ \ \mathbf r_2\ \ \mathbf t\,]\,(x, y, 1)^\top,
+\qquad\text{so}\qquad
+G \sim K\,[\,\mathbf r_1\ \ \mathbf r_2\ \ \mathbf t\,],
+$$
+
+where $\mathbf r_1, \mathbf r_2$ are the first two columns of $R$
+[[15]](#ref-zhang). The columns $\mathbf g_1$ and $\mathbf g_2$ are the images
+of the plane's points at infinity along $x$ and $y$: the vanishing points of
+the card's two families of edges.
+
+Phone cameras have square pixels, negligible skew and a principal point at
+the image centre $(u_0, v_0)$. In centred coordinates $u' = u - u_0$,
+$v' = v - v_0$ the intrinsic matrix is $K = \operatorname{diag}(f, f, 1)$ with
+the focal length $f$ (in pixels) as the only unknown. The columns
+$\mathbf r_1, \mathbf r_2$ of a rotation are orthogonal and of equal length,
+so with $\omega = K^{-\top}K^{-1} = \operatorname{diag}(f^{-2}, f^{-2}, 1)$,
+
+$$
+\mathbf g_1^\top\,\omega\,\mathbf g_2 = 0,
+\qquad
+\mathbf g_1^\top\,\omega\,\mathbf g_1 = \mathbf g_2^\top\,\omega\,\mathbf g_2 .
+$$
+
+Writing $\mathbf g_i = (a_i, b_i, c_i)^\top$ and expanding,
+
+$$
+f^2 = -\frac{a_1 a_2 + b_1 b_2}{c_1 c_2}
+\quad\text{(orthogonal edges)},
+\qquad
+f^2 = -\frac{a_1^2 + b_1^2 - a_2^2 - b_2^2}{c_1^2 - c_2^2}
+\quad\text{(equal scale)}.
+$$
+
+The first equation is the classical statement that the vanishing points
+$\mathbf v_i = (a_i/c_i,\ b_i/c_i)$ of two orthogonal directions satisfy
+$\mathbf v_1\cdot\mathbf v_2 + f^2 = 0$ in centred pixel coordinates
+[[1]](#ref-hartley). The second exists only because the card's dimensions,
+hence its aspect ratio, are known: a rectangle of unknown proportions fixes
+the plane only up to a stretch along its edges and yields the first equation
+alone. Both equations are linear in $f^2$, so they are solved together by
+least squares, and their disagreement, with the aspect-ratio check of §1.1,
+diagnoses badly placed corners.
+
+**Degeneracy.** For a view looking straight down the optical axis is parallel
+to the table normal, the vanishing points recede to infinity, $c_1 = c_2 = 0$,
+and both equations reduce to $0 = 0$: $f$ is unobservable. For a view tilted
+by $\theta$ from the vertical the vanishing point of the depth direction lies
+at distance $f\cot\theta$ from the principal point, so its position, and
+hence $f$, is poorly determined for small $\theta$. The two photographs of a
+meal (§1.6) come from the same camera and share one $f$, which is therefore
+estimated from both views jointly, each view's equations weighted by the
+inverse variance obtained by propagating a corner displacement through them;
+the oblique view dominates, as it should.
+
+**Prior.** When a photograph comes from the file system its EXIF
+`FocalLengthIn35mmFilm` value $f_{35}$ (mm) gives
+$f = f_{35}\,N_{\mathrm{long}}/36$, with $N_{\mathrm{long}}$ the image's long
+side in pixels and 36 mm the long side of the 35 mm frame. It is combined with
+the card estimate by precision weighting (§6.3). Camera frames taken in the
+browser carry no EXIF. Across sessions the device's $f/N_{\mathrm{long}}$ is
+remembered as a running median, so a later single photograph, even one taken
+straight down, still has a usable focal length. The viewfinder is held at 1×
+zoom; file photographs whose EXIF indicates the ultra-wide camera are declined
+with a hint, because its distortion exceeds this model.
+
+**Lens distortion.** The camera pipeline corrects the main lens before the
+image is saved; the residual is about 1 % at the frame edge and is included
+in $\sigma_{\ln A}$ as a term **(to be fixed at build** from the evaluation
+set, §7**)**. The capture guide keeps the card and plate within the central
+two-thirds of the frame.
+
+### 1.5 Camera pose: height above the table and viewing angle
+
+With $K$ known, let $B = K^{-1}G = [\,\mathbf b_1\ \mathbf b_2\ \mathbf b_3\,]$.
+Then $\mathbf b_1 = \lambda\mathbf r_1$, $\mathbf b_2 = \lambda\mathbf r_2$ and
+$\mathbf b_3 = \lambda\mathbf t$ for one unknown scale $\lambda$, so
+
+$$
+\lambda = \tfrac12\big(\|\mathbf b_1\| + \|\mathbf b_2\|\big),
+\qquad
+\mathbf r_1 = \frac{\mathbf b_1}{\lambda},\quad
+\mathbf r_2 = \frac{\mathbf b_2}{\lambda},\quad
+\mathbf r_3 = \mathbf r_1\times\mathbf r_2,\quad
+\mathbf t = \frac{\mathbf b_3}{\lambda},
+$$
+
+with the overall sign of $G$ chosen so that $t_z > 0$ (the card lies in front
+of the camera). Corner noise makes $[\,\mathbf r_1\ \mathbf r_2\ \mathbf r_3\,]$
+only approximately orthonormal; it is replaced by the nearest rotation
+$R = UV^\top$ from its singular value decomposition $U\Sigma V^\top$
+[[15]](#ref-zhang). Because the card's coordinates are in millimetres,
+$\mathbf t$ and everything derived from it are in millimetres.
+
+The camera centre in the table frame is
+
+$$
+\mathbf C = -R^\top\mathbf t = (c_x,\ c_y,\ c_z)^\top :
+$$
+
+$c_z$ is the camera's height above the table and $\mathbf n = (c_x, c_y)$ is
+the **nadir**, the point on the table directly beneath the camera. The optical
+axis in the table frame is the third row of $R$, and the viewing angle from
+the vertical is
+
+$$
+\theta = \arccos\!\big(-R_{33}\big),
+$$
+
+near $0$ for a photograph taken from above and near $45°$ for an oblique one.
+The gyroscope tilt shown in the viewfinder guides the user before the shot;
+the card's $\theta$ is what the computation uses afterwards.
+
+**Exact parallax.** A point at height $h$ above table position $\mathbf q$
+lies on the ray from $\mathbf C$; that ray meets the table where
+$c_z + \lambda(h - c_z) = 0$, i.e. at $\lambda = c_z/(c_z - h)$, so the plane
+homography places the point at
+
+$$
+\mathbf q' = \mathbf n + \frac{c_z}{c_z - h}\,(\mathbf q - \mathbf n),
+$$
+
+displaced radially away from the nadir by the factor $c_z/(c_z - h)$. This
+replaces the approximate $(1 - h/Z)^{-2}$ of §1.3 (which is the special case
+of an item centred under the camera) by an exact, position-dependent
+correction: once $h$ is known (§1.6), each outline vertex that belongs to the
+item's top surface is mapped back by the inverse,
+$\mathbf q = \mathbf n + \tfrac{c_z - h}{c_z}(\mathbf q' - \mathbf n)$, while
+vertices on the item's base need no correction. Which vertices are which
+follows from the shape class (§2.1).
+
+### 1.6 Two photographs: measured height from parallax
+
+**Protocol.** The user takes one photograph from above ($\theta_1$ small) and
+one from the side at $\theta_2$ between about $30°$ and $60°$, with the card
+fully visible in both and nothing moved between the shots. Roles are assigned
+from the measured angles, not from the order of capture. Because each view's
+pose is recovered from the card alone (§1.5), both are expressed in the card's
+frame directly: no feature matching between the photographs and no
+structure-from-motion is needed. The method extends unchanged to more than two
+views; two is the budgeted default ([`design.md`](design.md) §5.3).
+
+**Common frame.** A rectangle is unchanged by a half-turn, so the
+correspondence between the card's corners in the two views is ambiguous by a
+rotation of $180°$ about the card's centre; the wrong choice rotates one
+view's whole scene by a half-turn. Both choices are tried and the one kept for
+which the two views' food outlines, mapped to the table plane, overlap (largest
+intersection over union), with the card's printed face (chip, text) as a
+tie-break. Reflections are excluded because the corners are traversed in the
+same rotational sense in both views, which fixes the handedness.
+
+**Items.** Both images are sent to the AI in one request, which returns, per
+item, an outline in each image under one label; the geometric overlap test
+above verifies the matching. The AI's own height impression from the pair is
+retained only as a prior and combined with the measurement below by precision
+weighting (§6.3).
+
+**Estimator.** For an item, let $F$ be its footprint from photograph 1 (the
+outline through $H_1$; for $\theta_1 \approx 0$ and $h \ll c_{z,1}$ the
+parallax of §1.5 is small and is applied iteratively). Let $S$ be its outline
+in photograph 2 mapped through $H_2$ to the table plane, $\mathbf n_2$ the
+nadir of photograph 2 and $\hat{\mathbf d}$ the unit vector from $\mathbf n_2$
+towards the centroid of $F$. Define the far extents
+
+$$
+e_F = \max_{\mathbf q\in F}\ (\mathbf q - \mathbf n_2)\cdot\hat{\mathbf d},
+\qquad
+e_S = \max_{\mathbf q\in S}\ (\mathbf q - \mathbf n_2)\cdot\hat{\mathbf d}.
+$$
+
+The far edge of $S$ is the image of the item's far limb, which is raised above
+the table. By §1.5 a point of the item at height $z$ whose horizontal section
+reaches radial extent $\rho(z)$ appears at radial extent
+$\rho(z)\,c_{z,2}/(c_{z,2} - z)$, so
+
+$$
+e_S = \max_{0 \le z \le h}\ \frac{c_{z,2}}{c_{z,2} - z}\,\rho(z).
+$$
+
+For a flat-topped item ($\rho(z) = e_F$ for all $z$) the maximum is at the top:
+
+$$
+e_S = e_F\,\frac{c_{z,2}}{c_{z,2} - h}
+\quad\Longrightarrow\quad
+h = c_{z,2}\left(1 - \frac{e_F}{e_S}\right).
+$$
+
+For a mound, $\rho(z) = (e_F - a) + a\,\psi(z/h)$, where $a$ is the item's
+half-extent along $\hat{\mathbf d}$ and $\psi$ is the profile of its shape
+class in §2.1 ($\psi(s) = \sqrt{1 - s}$ for a paraboloid, $1 - s$ for a cone,
+$\sqrt{1 - s^2}$ for a hemispherical cap). The right-hand side increases
+monotonically with $h$, since a larger $h$ lifts every section further, so $h$
+is found by bisection. The far edge of $S$ therefore measures $h$; the AI
+supplies only the shape class.
+
+**Precision.** For a flat top with $h \ll c_{z,2}$,
+$e_S \approx e_F\,(1 + h/c_{z,2})$, hence
+
+$$
+\sigma_h \approx \sigma_{e_S}\,\frac{c_{z,2}}{e_F} = \sigma_{e_S}\cot\theta_{\mathrm{far}},
+\qquad \tan\theta_{\mathrm{far}} = \frac{e_F}{c_{z,2}},
+$$
+
+where $\theta_{\mathrm{far}}$ is the angle from the vertical at which the far
+edge is seen. The height resolution improves with obliqueness: at $20°$ the
+outline error is magnified $2.7\times$, at $45°$ it passes through unchanged,
+at $60°$ it is halved. Beyond about $60°$ the card is foreshortened (its short
+side shrinks as $\cos\theta$, degrading the corners) and items occlude one
+another, hence the $30°$–$60°$ window with a $45°$ target. $\sigma_{e_S}$
+follows from the outline's pixel error through the Jacobian of $H_2$ at the
+far edge (§1.2), and $\sigma_{\ln h} = \sigma_h/h$ replaces the AI's
+guessed-height term in §3.1. A worked case: at a camera height of 45 cm and
+$\theta_2 = 45°$, a 1024 px image places about 1.4 px per millimetre near the
+card, so an outline error of 3 px is 2 mm on the table and 2 mm in $h$, i.e.
+$\sigma_{\ln h} \approx 0.07$ for a 3 cm mound against roughly 0.3–0.5 for a
+height guessed from one image **(both to be confirmed at build** from the
+evaluation set**)**.
+
+**Checks and failure modes.**
+
+- The near edges of $F$ and $S$ coincide for an item lying wholly beyond the
+  nadir (its near silhouette is its base), which checks the frame
+  correspondence and the outline quality.
+- Where another item's outline overlaps the far edge in photograph 2, the
+  extent is truncated and $h$ would be underestimated; the item falls back to
+  the AI height with its wider uncertainty, and the capture guide asks for the
+  side photograph to be taken with the tallest items furthest from the camera.
+- If $\theta_2 < 20°$ or the card is not found in one view, the second
+  photograph adds little and the single-view model is used, with a note to
+  the user.
+
+**Bowls.** The oblique photograph shows the far inner wall down to the food
+surface. The far rim, at height $z_r$ and radial extent $\rho_r$, and the
+surface's far edge, at height $z_s$ and radial extent $\rho_s \le \rho_r$
+given by the bowl profile, appear at $\rho_r\,c_{z,2}/(c_{z,2} - z_r)$ and
+$\rho_s\,c_{z,2}/(c_{z,2} - z_s)$. Their separation fixes $z_r - z_s$, the
+depth of the surface below the rim, and hence the fill fraction $f$ of §2.2
+without a slider.
 
 ---
 
@@ -111,9 +360,10 @@ where the shape factor $k$ depends on the profile: $k = 1$ for a slab,
 $k = 1/2$ for a paraboloid or a shallow spherical cap, $k = 1/3$ for a cone.
 The spherical-cap case follows from $V_{\mathrm{cap}} = \tfrac{\pi h}{6}(3a^2 + h^2)$
 with $A = \pi a^2$, giving $V = \tfrac{1}{2} A h + \tfrac{\pi h^3}{6}$, which
-tends to $\tfrac{1}{2} A h$ when $h \ll a$. The AI supplies $h$ and a shape
-class; both carry uncertainty, and $h$ is the dominant error term of the card
-method. The optional 45° photo constrains $h$ directly.
+tends to $\tfrac{1}{2} A h$ when $h \ll a$. With two photographs, $h$ is
+measured from the parallax of the oblique view (§1.6) and the AI supplies only
+the shape class. With a single photograph the AI supplies $h$ as well, and $h$
+is then the dominant error term of the card method.
 
 ### 2.2 Food in a bowl
 
@@ -153,18 +403,34 @@ energy per 100 g. Macronutrients scale identically.
 
 ### 2.5 Label consistency check
 
-Label energy is checked against the Atwater general factors
-[[3]](#ref-merrill):
+Label energy is checked against the energy computed from the declared
+nutrients. The conversion factors are set by each region's labelling law, and
+the check must mirror the region of the label being read:
+
+| Region | Protein | Carbohydrate | Fat | Fibre | Alcohol | Energy unit | Sodium |
+|---|---|---|---|---|---|---|---|
+| United States [[17]](#ref-fda) | 4 kcal/g | 4 kcal/g, *including* fibre | 9 kcal/g | within carbohydrate | 7 kcal/g | kcal only | sodium (mg) |
+| United Kingdom and EU [[16]](#ref-eu1169) | 17 kJ/g (4 kcal) | 17 kJ/g (4 kcal), *excluding* fibre | 37 kJ/g (9 kcal) | 8 kJ/g (2 kcal) | 29 kJ/g (7 kcal) | kJ and kcal | salt = 2.5 × sodium |
+| Hong Kong [[18]](#ref-hkcfs) | 4 kcal/g | 4 kcal/g, available carbohydrate | 9 kcal/g | 2 kcal/g | 7 kcal/g | kcal or kJ | sodium (mg) |
+
+The factors are the Atwater general factors [[3]](#ref-merrill) in every
+region; the regions differ in whether fibre is inside the carbohydrate figure
+and in units. With $C'$ the carbohydrate excluding fibre ($C' = C - \mathrm{Fi}$
+for a United States label), the check is
 
 $$
-E_{\mathrm{Atwater}} = 4P + 4C + 9F \quad (+\,7\,\mathrm{alcohol}),
+E_{\mathrm{calc}} = 4P + 4C' + 9F + 2\,\mathrm{Fi} + 7\,\mathrm{Alc}
+\quad\text{(kcal)},
+\qquad 1\ \mathrm{kcal} = 4.184\ \mathrm{kJ},
 $$
 
-with $P, C, F$ in grams and $E$ in kcal. A relative discrepancy
-$|E_{\mathrm{label}} - E_{\mathrm{Atwater}}| / E_{\mathrm{label}}$ above a
-threshold flags a likely misread. Label rounding rules and components outside
-the formula (fibre, polyols) make some discrepancy normal; the threshold is
-**to be fixed at build** from a sample of real labels.
+and a relative discrepancy $|E_{\mathrm{label}} - E_{\mathrm{calc}}| / E_{\mathrm{label}}$
+above a threshold flags a likely misread. Label rounding rules, polyols and
+organic acids make some discrepancy normal, and United States manufacturers
+may lawfully use specific factors or subtract insoluble fibre, so the
+threshold is region-specific and **to be fixed at build** from a sample of
+real labels from each region. The Hong Kong factors are to be confirmed
+against the current Technical Guidance Notes at build.
 
 ---
 
@@ -376,7 +642,11 @@ version: median absolute percentage error, bias, and empirical coverage of the
 80 % intervals, with plots of predicted against true mass on log axes. The
 public repository ships synthetic and licensed images; personal images stay in
 the user's private wrapper. The error constants marked **(to be fixed at
-build)** in §1–§2 are set from this evaluation.
+build)** in §1–§2 are set from this evaluation. The two-view geometry of
+§1.4–§1.6 is additionally tested on synthetic scenes: mounds of known height
+rendered through pinhole cameras of known pose, with seeded corner and outline
+noise, so that the recovered $f$, $\theta$, $c_z$ and $h$ are compared with
+their true values before any real photograph is used.
 
 ---
 
@@ -409,3 +679,11 @@ build)** in §1–§2 are set from this evaluation.
 <span id="ref-hall">[13]</span> Hall, K. D., Sacks, G., Chandramohan, D., Chow, C. C., Wang, Y. C., Gortmaker, S. L., & Swinburn, B. A. (2011). Quantification of the effect of energy imbalance on bodyweight. *The Lancet*, 378(9793), 826–837. [Link](https://doi.org/10.1016/S0140-6736(11)60812-X)
 
 <span id="ref-morton">[14]</span> Morton, R. W., Murphy, K. T., McKellar, S. R., et al. (2018). A systematic review, meta-analysis and meta-regression of the effect of protein supplementation on resistance training-induced gains in muscle mass and strength in healthy adults. *British Journal of Sports Medicine*, 52(6), 376–384. [Link](https://doi.org/10.1136/bjsports-2017-097608)
+
+<span id="ref-zhang">[15]</span> Zhang, Z. (2000). A flexible new technique for camera calibration. *IEEE Transactions on Pattern Analysis and Machine Intelligence*, 22(11), 1330–1334. [Link](https://doi.org/10.1109/34.888718)
+
+<span id="ref-eu1169">[16]</span> Regulation (EU) No 1169/2011 of the European Parliament and of the Council on the provision of food information to consumers, Annex I (definition of salt) and Annex XIV (conversion factors); retained in United Kingdom law. [Link](https://eur-lex.europa.eu/eli/reg/2011/1169/oj)
+
+<span id="ref-fda">[17]</span> United States Code of Federal Regulations, Title 21 §101.9(c), *Nutrition labeling of food*: calorie calculation methods and the definition of total carbohydrate. [Link](https://www.ecfr.gov/current/title-21/chapter-I/subchapter-B/part-101/subpart-A/section-101.9)
+
+<span id="ref-hkcfs">[18]</span> Centre for Food Safety, Hong Kong. *Technical Guidance Notes on Nutrition Labelling and Nutrition Claims.* Food and Environmental Hygiene Department. [Link](https://www.cfs.gov.hk/english/food_leg/food_leg_Technical_Guidance_Notes.html)

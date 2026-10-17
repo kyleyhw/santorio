@@ -29,6 +29,8 @@ creates for themselves (§7); personal data belongs only on the device.
 | AI | Bring your own key; Gemini default, Claude available; not required to start using the app | Agreed |
 | Private wrapper | Public repo provides the hooks and a setup guide only; no private repository is created by the project | Agreed |
 | Process | Style round first, then a single-pass build of the whole web app (§10) | Agreed |
+| Regions | Food databases for Hong Kong, the United Kingdom and the United States are first-class; the user chooses which to install at first run and in Settings; further regions plug in through the same pack mechanism (§7.1–7.2) | Agreed |
+| Portion capture | Two photographs per meal, one from above and one from about 45°, both including the card; the second is optional and yields measured heights ([`math.md`](math.md) §1.4–1.6) | Agreed |
 | Cross-device sync | **Open**, see §11 | Open |
 
 ---
@@ -92,7 +94,7 @@ diverge.
 |---|---|---|
 | Layout | Single column, bottom navigation, thumb-reachable primary action | Two panes: Today on the left, Log / Plate on the right; side navigation |
 | Logging input | Universal input bar, camera button | Same bar, always focused; `/` focuses it from anywhere |
-| Photos | Camera capture | Drag-and-drop, paste from clipboard, file picker, or webcam |
+| Photos | Camera capture, guided two-shot flow (overhead, then side) | Drag-and-drop, paste from clipboard, file picker, or webcam; two files dropped together are treated as a pair |
 | Barcode | Camera | Webcam, or type the digits |
 | Charts | Compact | Expanded, with hover read-outs |
 | Install | Add to Home Screen | Chrome "Install app" |
@@ -153,6 +155,7 @@ extra code.
 | Log a known food by search | type ≤ 4 characters + 1 tap |
 | Quick add calories | type number + Enter |
 | Photo | shutter + 1 tap to accept |
+| Photo with depth (two shots) | shutter, shutter + 1 tap to accept |
 | Barcode already scanned before | scan, auto-logged with undo |
 | Edit a gram amount | 1 tap + drag or type |
 
@@ -168,6 +171,11 @@ The full derivations are in [`math.md`](math.md). The design consequences:
   height, density, energy density, portion from a description) carries a
   log-normal multiplicative uncertainty. These propagate analytically to each
   item's mass and energy, then to meal and day totals.
+- **Measured geometry.** The card fixes not only the scale but the camera's
+  focal length, height above the table and viewing angle, so the parallax
+  correction is exact rather than guessed; a second photograph from the side
+  turns food height from an AI guess into a measurement with a derived
+  uncertainty ([`math.md`](math.md) §1.4–1.6).
 - **Display.** Values are shown as a point estimate with an 80 % interval
   when the interval is wide, e.g. `650 kcal (540–790)`, and rounded so that
   displayed digits do not exceed the precision (e.g. to the nearest 10 kcal
@@ -196,7 +204,7 @@ The public repository is generic. Personal or regional content plugs in as
 | Pack | Contents |
 |---|---|
 | `foods` | Foods, per-100 g nutrition, typical portions, source and licence |
-| `reference-objects` | Objects of known size for scale (an ID-1 card is built in) |
+| `reference-objects` | Objects of known size for scale (an ID-1 card is built in; regional banknotes and playing cards, §7.2) |
 | `checklist` | Daily checklist items, optionally matched to Health workouts |
 | `restaurants` | Places and usual orders (names only, never coordinates) |
 | `presets` | Default targets, units, reminder schedule |
@@ -225,6 +233,79 @@ Public-repository rules:
   exists; CI rejects image fixtures containing EXIF or GPS metadata.
 - GitHub secret scanning and push protection should be enabled in the
   repository settings.
+
+### 7.1 Regional food databases
+
+Santorio must work out of the box in Hong Kong, the United Kingdom and the
+United States. Working means: a food search that knows the local foods and
+spellings; nutrition labels read with the local schema and conversion factors
+([`math.md`](math.md) §2.5); barcodes resolved with local coverage; household
+measures and units the user actually thinks in; and copy in the local
+spelling.
+
+Each region is a `foods` pack built from an open source by `tools/packs`
+(Python, uv), with provenance, licence and attribution recorded in the pack
+itself:
+
+| Region | Source | Licence | Contents |
+|---|---|---|---|
+| United States | USDA FoodData Central: Foundation Foods, SR Legacy and FNDDS (Food and Nutrient Database for Dietary Studies) | Public domain (CC0 1.0) | About 13 000 foods; FNDDS supplies household-measure weights ("1 cup", "1 slice"), which also yield densities for the volume model |
+| United Kingdom | McCance and Widdowson's *The Composition of Foods Integrated Dataset* (CoFID) | Open Government Licence v3.0 (attribution statement required) | About 2 900 foods with about 60 nutrients |
+| Hong Kong | Centre for Food Safety Nutrient Information Inquiry System, plus the starter list of local dishes | Terms to be checked before bundling (Phase 0) | Local dishes, drinks and modifiers |
+
+Branded products with barcodes are not bundled. They are looked up in Open
+Food Facts (ODbL; good coverage in the UK, fair in the US, limited in Hong
+Kong), with the label-photo fallback. The USDA Branded Foods dataset
+(UPC-keyed) can be queried through the FoodData Central API with a free key
+the user obtains; this is off by default, and when enabled its host is added
+to the Content Security Policy and appears in the network activity list.
+
+**Install.** First run asks where the user mostly eats, with the suggestion
+pre-selected from the browser's language and time zone (`en-GB` → United
+Kingdom, `Asia/Hong_Kong` → Hong Kong), multi-select, skippable. Settings →
+Food databases lists every pack with size, source, licence, version and an
+install or remove toggle. Downloads run in the background from the app's own
+origin and are cached by the service worker for offline use. Removing a pack
+never alters existing logs, because every meal item stores a snapshot of the
+values it used (§6, provenance). Packs are public data and are stored
+unencrypted in Cache Storage; the list of installed packs, which reveals the
+user's regions, lives in the vault.
+
+**Build and hosting.** `tools/packs` downloads pinned source files, verifies
+checksums, normalises to the pack schema and emits compressed, versioned JSON
+published under `/packs/<region>/<version>/` by the Pages deploy. Sources,
+versions and licences are recorded in `packages/packs/SOURCES.md`. The small
+Hong Kong pack is committed; whether the UK and US packs are committed or
+built in CI is an open question ([`plan-audit.md`](plan-audit.md) §4).
+
+Further regions (Canada's Canadian Nutrient File, Australia's AFCD, France's
+Ciqual and Denmark's Frida are all openly licensed) plug in through the same
+mechanism later; none is in the current plan.
+
+### 7.2 Regional conventions
+
+Selecting a region also sets defaults, each individually adjustable in
+Settings:
+
+| Convention | Hong Kong | United Kingdom | United States |
+|---|---|---|---|
+| Body weight | kg | kg, or stones and pounds (1 st = 6.350 29 kg) | lb (1 lb = 453.592 37 g) |
+| Height | cm | cm, or feet and inches | feet and inches |
+| Energy | kcal | kcal, with kJ as printed on labels | kcal ("Calories") |
+| Salt | sodium, mg | salt, g (2.5 × sodium) | sodium, mg |
+| Household measures | 碗 (bowl); 兩 (tael, 37.80 g); 斤 (catty, 604.79 g) | slices, handfuls, tablespoons (15 ml), pints (568.26 ml) | cups (240 ml labelling cup; 236.59 ml customary), fl oz (29.57 ml), tbsp (14.79 ml), pints (473.18 ml) |
+| Label schema | Energy plus 7 core nutrients, English or Chinese, per 100 g or per serving | Energy in kJ and kcal, fat, saturates, carbohydrate, sugars, fibre, protein, salt; per 100 g, optionally per portion; front-of-pack traffic lights | Nutrition Facts: calories, total, saturated and trans fat, cholesterol, sodium, total carbohydrate, fibre, total and added sugars, protein, % Daily Value; per serving, household measure plus grams |
+| Barcodes | EAN-13 | EAN-13, EAN-8 | UPC-A, UPC-E (normalised to GTIN-13 by a leading 0) |
+| Spelling and synonyms | 叉燒 / char siu / cha siu; 奶茶 / milk tea | fibre, courgette, aubergine, coriander, rocket, crisps, chips, biscuit | fiber, zucchini, eggplant, cilantro, arugula, chips, fries, cookie |
+| Reference objects | Octopus card, HKID card, bank card (all ID-1) | bank card, driving licence (ID-1), polymer banknotes | bank card, driver's licence (ID-1), dollar bill (156.1 × 66.3 mm) |
+
+Unit constants are exact legal definitions (NIST Special Publication 811; the
+UK Weights and Measures Act 1985; the Hong Kong Weights and Measures
+Ordinance, Cap. 68) and are recorded with their sources in `core`. Search
+matches synonyms across all installed regions and ranks the user's primary
+region first. The AI prompt carries the user's region names as a hint for
+interpreting descriptions; this is the only new datum sent to the provider
+(§8.4), and never a location.
 
 ---
 
@@ -272,7 +353,9 @@ controls.
 |---|---|---|
 | Camera | `getUserMedia`, file input, drag-and-drop, paste | same |
 | Tilt indicator | `DeviceOrientationEvent` (phones only) | CoreMotion |
-| Card corners | AI proposes, user can drag | Apple Vision |
+| Card corners | AI proposes, local edge refinement, user can drag | Apple Vision |
+| Camera focal length and pose | From the card ([`math.md`](math.md) §1.4–1.5); EXIF prior for file photos; remembered per device | Same, plus intrinsics from the capture API |
+| Depth | Second photograph from the side ([`math.md`](math.md) §1.6) | Same, plus LiDAR on Pro models |
 | Barcode | `BarcodeDetector` or WASM decoder | VisionKit |
 | Apple Health | unavailable (optional import of Health's export file, later) | HealthKit |
 | LiDAR | unavailable | ARKit scene depth |
@@ -300,14 +383,16 @@ controls.
 
 ### 8.4 AI
 
-- One `AIProvider` interface: analyse plate, read label, parse description,
-  find card corners.
+- One `AIProvider` interface: analyse plate (one or two photographs), read
+  label (regional schemas), parse description, find card corners.
 - Fixed JSON schemas; every response is validated, retried once with the
   validation error, then degraded (mask → polygon → box → manual).
 - Data minimisation: only the food photo (downscaled to about 1024 px on the
-  long edge and re-encoded, which removes all metadata), the optional note and
-  the restaurant name are sent. Never body statistics, goals, history,
-  progress photos or location.
+  long edge and re-encoded, which removes all metadata), the optional note,
+  the restaurant name and the user's region names (a hint for interpreting
+  local foods) are sent. Never body statistics, goals, history, progress
+  photos or location. With two photographs both go in one request, which
+  roughly doubles the per-meal cost shown in Settings.
 - Model names live in one configuration file; the prompt version is stored
   with each result.
 - Calls go directly from the browser. Claude requires the
@@ -322,7 +407,8 @@ controls.
 
 - **Content Security Policy** as a `<meta>` tag (GitHub Pages cannot set
   response headers): scripts only from the app's own origin; network only to
-  the configured AI provider and Open Food Facts; no CDNs or external fonts.
+  the configured AI provider, Open Food Facts and, if the user enables it, the
+  USDA FoodData Central API; no CDNs or external fonts.
 - **GitHub Pages origin.** The app is served from
   `<user>.github.io/santorio/`. Every GitHub Pages project on the same account
   shares that origin and could therefore read its browser storage. This is
@@ -373,6 +459,9 @@ controls.
 3. **Calorie floor value.** It is a design guardrail rather than a
    physiological threshold. Candidate: the larger of the estimated resting
    energy expenditure and a fixed minimum, to be agreed in the style round.
+4. **Audit proposals.** [`plan-audit.md`](plan-audit.md) lists proposed edits
+   and features awaiting a decision; accepted items move into
+   [`PROJECT_PLAN.md`](../PROJECT_PLAN.md) as pending tasks.
 
 ---
 

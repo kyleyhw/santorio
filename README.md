@@ -6,7 +6,7 @@ own device, and estimates portions from photos using a reference card of known
 size. Named after Santorio Santorio, the 17th-century physician who weighed
 himself and everything he ate for decades.
 
-**Status:** design complete, implementation not started. See
+**Status:** design in review, implementation not started. See
 [`PROJECT_PLAN.md`](PROJECT_PLAN.md).
 
 **This repository is public.** Never commit personal data, API keys or
@@ -26,7 +26,8 @@ santorio/
 ├── .secrets.baseline       detect-secrets baseline
 └── docs/
     ├── design.md           decisions and rationale
-    └── math.md             mathematical models and references
+    ├── math.md             mathematical models and references
+    └── plan-audit.md       audit of the plan: findings, proposals, decisions requested
 ```
 
 The planned code layout (`packages/`, `apps/`, `tools/`, `tests/reports/`) is
@@ -38,7 +39,8 @@ described in [`docs/design.md`](docs/design.md) §8.1.
 |---|---|
 | [`PROJECT_PLAN.md`](PROJECT_PLAN.md) | Phases, tasks, status |
 | [`docs/design.md`](docs/design.md) | Decisions, principles, architecture, privacy, open questions |
-| [`docs/math.md`](docs/math.md) | Card geometry, volume, uncertainty propagation, calibration, weight trend, energy expenditure |
+| [`docs/math.md`](docs/math.md) | Card geometry and camera pose, two-photograph height, volume, regional label factors, uncertainty propagation, calibration, weight trend, energy expenditure |
+| [`docs/plan-audit.md`](docs/plan-audit.md) | Audit of the plan against the spec and design: gaps, proposed edits, proposed features, decisions requested |
 | [`SPEC.md`](SPEC.md) | Original skeleton spec (superseded where it conflicts with the design) |
 
 ## Overview
@@ -66,6 +68,19 @@ Portion estimation rests on three models, derived in
    card error treated as a common factor. Estimates are shown with 80 %
    intervals, which are recalibrated against the user's kitchen-scale
    measurements by split-conformal prediction.
+
+The card does more than set the scale. Its two families of edges meet at
+vanishing points whose product fixes the camera's focal length, and the
+homography then decomposes into the camera's height above the table and its
+viewing angle. A second photograph from about 45° turns food height into a
+measurement: a point at height $h$ appears displaced from the camera's nadir
+by the factor $c_z/(c_z - h)$, so the far edge of an item's outline in the
+side view gives $h$ directly, with a precision that improves as $\cot\theta$
+of the viewing angle.
+
+Food databases are regional packs (Hong Kong, United Kingdom, United States)
+chosen at first run or in Settings; each region also sets units, label
+schemas, barcode types and spelling.
 
 Body-weight trend uses a local linear trend Kalman filter. Energy expenditure
 combines a Mifflin–St Jeor prior with an energy-balance estimate
